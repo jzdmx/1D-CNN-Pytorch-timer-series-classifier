@@ -8,7 +8,8 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard import SummaryWriter
 import time
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, f1_score
+
 
 # setting seed
 def setup_seed(seed):
@@ -23,12 +24,13 @@ def setup_seed(seed):
 
 setup_seed(666)
 
+
 # Generating low frequency waveforms
-low_freqs = np.random.normal(1, 0.1, size=500)  # Random low frequencies
-phases = np.random.uniform(0, 2 * np.pi, size=500)  # Regular time sampling
+low_freqs = np.random.normal(1, 0.1, size=100000)  # Random low frequencies
+phases = np.random.uniform(0, 2 * np.pi, size=100000)  # Regular time sampling
 tt = np.linspace(0, 10, 1000)
 lf_signals = np.sin(np.outer(low_freqs, tt) + phases.reshape(-1,1))  
-# Should give an array of shape (500,1000) ― 500 different low-frequency waveforms
+# Should give an array of shape (100000,1000) ― 100000 different low-frequency waveforms
 
 # plt.plot(tt, lf_signals[1, :], color='red')
 # plt.plot(tt, lf_signals[50, :], color='green')
@@ -38,12 +40,13 @@ lf_signals = np.sin(np.outer(low_freqs, tt) + phases.reshape(-1,1))
 # plt.ylabel("Y")
 # plt.show()
 
+
 # Generating high frequency waveforms
-high_freqs = np.random.normal(10, 0.1, size=500)  # Random higher frequencies
-phases = np.random.uniform(0, 2 * np.pi, size=500)
+high_freqs = np.random.normal(10, 0.1, size=100000)  # Random higher frequencies
+phases = np.random.uniform(0, 2 * np.pi, size=100000)
 tt = np.linspace(0, 10, 1000)
 hf_signals = np.sin(np.outer(high_freqs, tt) + phases.reshape(-1, 1))  
-# 500 high-frequency waveforms
+# 100000 high-frequency waveforms
 
 # plt.plot(tt, hf_signals[1, :], color='red')
 # plt.plot(tt, hf_signals[50, :], color='green')
@@ -53,9 +56,30 @@ hf_signals = np.sin(np.outer(high_freqs, tt) + phases.reshape(-1, 1))
 # plt.ylabel("Y")
 # plt.show()
 
+
 # Combine the low_ and high_ frequency waveforms into one dataset
 X_data = np.vstack([lf_signals, hf_signals])
-Y_data = np.hstack([np.zeros(500), np.ones(500)])  # 0 = ‘low’, 1=‘high’
+Y_data = np.hstack([np.zeros(100000), np.ones(100000)])  # 0 = ‘low’, 1=‘high’
+
+# Splitting the dataset into training set and rest of data
+train_x, rest_x, train_y, rest_y = train_test_split(X_data, Y_data, train_size=0.8, random_state=0)
+
+# spliting the rest of data into validation set and testing set
+valid_x, test_x, valid_y, test_y = train_test_split(rest_x, rest_y, test_size=0.5, random_state=0)
+
+# 80% for training set
+train_x = torch.from_numpy(train_x).type(torch.float32).unsqueeze(-1)
+train_y = torch.from_numpy(train_y).type(torch.int64)
+
+# 10% for validation set
+valid_x = torch.from_numpy(valid_x).type(torch.float32).unsqueeze(-1)
+valid_y = torch.from_numpy(valid_y).type(torch.int64)
+
+# 10% for testing set
+test_x = torch.from_numpy(test_x).type(torch.float32).unsqueeze(-1)
+test_y = torch.from_numpy(test_y).type(torch.int64)
+
+
 
 # Building a 1D CNN model
 class Network(nn.Module):
@@ -86,7 +110,7 @@ if torch.cuda.is_available():
 
 if __name__ == '__main__':
     cnn = Network()
-    input = torch.ones(1000, 1000, 1)
+    input = torch.ones(100000, 1000, 1)
     output = cnn(input)
     # print(output.shape)
 
@@ -100,24 +124,19 @@ learning_rate = 0.0001
 optimizer = torch.optim.SGD(cnn.parameters(), lr=learning_rate, momentum=0.9)
 
 
-# dataset splitting
-# Splitting the dataset into training set and testing set
-train_x, test_x, train_y, test_y = train_test_split(X_data, Y_data)
-
-train_x = torch.from_numpy(train_x).type(torch.float32).unsqueeze(-1)
-train_y = torch.from_numpy(train_y).type(torch.int64)
-test_x = torch.from_numpy(test_x).type(torch.float32).unsqueeze(-1)
-test_y = torch.from_numpy(test_y).type(torch.int64)
-
-batch = 50
+batch = 100
 
 train_ds = TensorDataset(train_x, train_y)
 train_dl = DataLoader(train_ds, batch_size=batch, shuffle=True)
+
+valid_ds = TensorDataset(valid_x, valid_y)
+valid_dl = DataLoader(valid_ds, batch_size=batch, shuffle=True)
 
 test_ds = TensorDataset(test_x, test_y)
 test_dl = DataLoader(test_ds, batch_size=batch)
 
 train_data_size = len(train_ds)
+valid_data_size = len(valid_ds)
 test_data_size = len(test_ds)
 
 
@@ -129,9 +148,9 @@ total_train_step = 0
 # totaol No. of testing
 total_test_step = 0
 
-epoch = 200
+epoch = 10
 
-writer = SummaryWriter("../logs-train")
+# writer = SummaryWriter("../logs-train")
 start_time =time.time()
 for i in range(epoch):
     print("-------The {} round of training-------".format(i + 1))
@@ -152,7 +171,7 @@ for i in range(epoch):
         optimizer.step()
 
         total_train_step = total_train_step + 1
-        if total_train_step % 50 == 0:
+        if total_train_step % 100 == 0:
             end_time = time.time()
             print(end_time - start_time)
             print("The number of training:{}, Loss:{}".format(total_train_step, 
@@ -187,4 +206,24 @@ for i in range(epoch):
 #     torch.save(cnn,"cnn{}.pth".format(i))
 #     print("Model has been saved")
 
-writer.close()
+# writer.close()
+
+
+
+# Evaluatiing 
+
+test_output = cnn(valid_x)
+pred_y = cnn(valid_x).argmax(1)
+
+print('predict number :',pred_y)
+print(pred_y.shape)
+
+
+print('true number:',valid_y)
+print(valid_y.shape)
+
+cm = confusion_matrix(valid_y, pred_y, labels=None, sample_weight=None)
+confusion_matrix(valid_y, pred_y)
+
+report = f1_score(valid_y, pred_y)
+print(report)
