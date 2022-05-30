@@ -1,1 +1,1 @@
-xxxxxxxx
+The dataset used for this small task consists of high and low frequency waveforms. The dataset is divided into a training set and a test set, with the training set used to train the 1D convolutional neural network model and the test set used to validate the model.
